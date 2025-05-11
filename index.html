@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trade Setup Visualizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-100 p-6">
+    <div class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Left Column -->
+        <div class="bg-white p-6 rounded-2xl shadow space-y-4">
+            <div>
+                <label class="block text-green-600 font-medium">Target Price</label>
+                <input id="targetPrice" type="number" class="w-full border px-3 py-2 rounded" />
+            </div>
+            <div>
+                <label class="block text-black font-medium">Order Price</label>
+                <input id="orderPrice" type="number" class="w-full border px-3 py-2 rounded" />
+            </div>
+            <div>
+                <label class="block text-red-600 font-medium">Stop Price</label>
+                <input id="stopPrice" type="number" class="w-full border px-3 py-2 rounded" />
+            </div>
+            <div>
+                <label class="block text-red-600 font-medium">Amount to Risk</label>
+                <input id="riskAmount" type="number" class="w-full border px-3 py-2 rounded" />
+            </div>
+            <div>
+                <label class="block text-black font-medium">TP</label>
+                <input id="tpCount" type="number" min="1" max="10" value="3" class="w-full border px-3 py-2 rounded" />
+            </div>
+
+            <hr class="border-gray-300" />
+
+            <div>
+                <label class="block text-black font-medium">Shares</label>
+                <div id="shares" class="text-black">0</div>
+            </div>
+            <div>
+                <label class="block text-black font-medium">Cost</label>
+                <div id="cost" class="text-black">0.00</div>
+            </div>
+            <div>
+                <label class="block text-black font-medium">Max Profit</label>
+                <div id="maxProfit" class="text-black">0.00</div>
+            </div>
+            <div>
+                <label class="block text-black font-medium">Risk/Reward Ratio</label>
+                <div id="riskReward" class="text-black">0:0</div>
+            </div>
+        </div>
+
+        <!-- Right Column -->
+        <div class="bg-white p-6 rounded-2xl shadow relative h-[500px]">
+            <div id="visualization" class="absolute inset-0 px-[6px] py-[6px] overflow-hidden"></div>
+        </div>
+    </div>
+
+    <script>
+        const targetPrice = document.getElementById('targetPrice');
+        const orderPrice = document.getElementById('orderPrice');
+        const stopPrice = document.getElementById('stopPrice');
+        const riskAmount = document.getElementById('riskAmount');
+        const tpCount = document.getElementById('tpCount');
+        const shares = document.getElementById('shares');
+        const cost = document.getElementById('cost');
+        const maxProfit = document.getElementById('maxProfit');
+        const riskReward = document.getElementById('riskReward');
+        const visualization = document.getElementById('visualization');
+
+        function update() {
+            const target = parseFloat(targetPrice.value);
+            const order = parseFloat(orderPrice.value);
+            const stop = parseFloat(stopPrice.value);
+            const risk = parseFloat(riskAmount.value);
+            const tp = parseInt(tpCount.value);
+
+            if (isNaN(order) || isNaN(stop) || isNaN(risk) || order === stop) return;
+
+            const positionSize = risk / Math.abs(order - stop);
+            const tradeCost = positionSize * order;
+
+            shares.textContent = positionSize.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            cost.textContent = tradeCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+            let profit = 0;
+            if (!isNaN(target) && tp > 0) {
+                const step = (target - order) / tp;
+                for (let i = 1; i <= tp; i++) {
+                    const tpPrice = order + i * step;
+                    profit += (tpPrice - order) * (positionSize / tp);
+                }
+            }
+
+            if (risk > 0 && profit > 0) {
+                const profitPerShare = target - order;
+                const totalProfit = profitPerShare * positionSize;
+                const ratio = totalProfit / risk;
+                const x = 1;
+                const y = ratio.toFixed(2);
+                riskReward.textContent = `${x}:${parseFloat(y)}`;
+                riskReward.className = `text-${ratio < 3 ? 'red' : 'green'}-600`;
+            } else {
+                riskReward.textContent = '0:0';
+                riskReward.className = 'text-black';
+            }
+            maxProfit.textContent = profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+            drawVisualization({ stop, order, target, tp });
+        }
+
+        function drawVisualization({ stop, order, target, tp }) {
+            visualization.innerHTML = '';
+            const height = visualization.clientHeight;
+            const paddingFactor = 0.15;
+            const prices = [stop, order];
+            const levels = [];
+
+            if (!isNaN(target)) {
+                prices.push(target);
+                const step = (target - order) / tp;
+                for (let i = 1; i <= tp; i++) {
+                    levels.push({ label: `TP${i}`, price: order + i * step });
+                }
+            }
+
+            const allPrices = [stop, order, ...levels.map(l => l.price)];
+            const minPrice = Math.min(...allPrices);
+            const maxPrice = Math.max(...allPrices);
+            const scale = (price) => {
+                const scaleHeight = height * (1 - paddingFactor);
+                return (price - minPrice) / (maxPrice - minPrice) * scaleHeight + height * paddingFactor / 2;
+            };
+
+            const createLine = (label, price, color) => {
+                const line = document.createElement('div');
+                line.className = `absolute left-[6px] right-[6px] h-0.5 ${color === 'black' ? 'bg-black' : `bg-${color}-500`} text-sm flex justify-between items-center`;
+                line.style.bottom = `${scale(price)}px`;
+                line.innerHTML = `<div class='relative flex justify-between items-center w-full'><span class='text-${color}-600 font-semibold bg-white pr-1 z-10'>${label}</span><div class='flex-1 h-0.5 ${color === 'black' ? 'bg-black' : `bg-${color}-500`} mx-2'></div><span class='text-${color}-600 font-semibold bg-white pl-1 z-10'>${price.toFixed(2)}</span></div>`;
+                visualization.appendChild(line);
+            };
+
+            createLine('Stop', stop, 'red');
+            createLine('Order', order, 'black');
+
+            if (!isNaN(target)) {
+                for (let i = 0; i < levels.length; i++) {
+                    const { label, price } = levels[i];
+                    const color = i === levels.length - 1 ? 'green' : 'blue';
+                    createLine(label, price, color);
+                }
+            }
+        }
+
+        [targetPrice, orderPrice, stopPrice, riskAmount, tpCount].forEach(input => {
+            input.addEventListener('input', update);
+        });
+    </script>
+</body>
+
+</html>
